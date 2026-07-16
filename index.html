@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="ca">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.5, user-scalable=yes">
+    <title>TecnoPWA - Llei d'Ohm | Decret 175/2022</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { transition: background-color 0.3s, color 0.3s; background-color: #f8fafc; color: #1e293b; }
+        .container { max-width: 1200px; margin: 0 auto; padding: 1rem; }
+        
+        .dua-dark body { background-color: #121212; color: #e2e8f0; }
+        .dua-dark .bg-white { background-color: #1e293b !important; }
+        .dua-dark input, .dua-dark select, .dua-dark textarea { background-color: #334155; color: #f1f5f9; border-color: #475569; }
+        
+        .dua-contrast body { filter: contrast(180%) brightness(0.95); }
+        .dua-contrast .bg-white { background-color: #000000 !important; border: 2px solid white; color: white; }
+        .dua-contrast .text-gray-700 { color: #fff !important; }
+        
+        .dua-dyslexic body { font-family: 'OpenDyslexic', 'Arial', sans-serif; }
+        .dua-dyslexic .text-lg, .dua-dyslexic p, .dua-dyslexic label, .dua-dyslexic div { font-size: 1.25rem !important; line-height: 1.8 !important; }
+        .dua-dyslexic button, .dua-dyslexic input, .dua-dyslexic select { font-size: 1.1rem !important; padding: 0.6rem 1rem !important; }
+
+        @media print {
+            body { background-color: white !important; color: black !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+            .no-print { display: none !important; }
+            .print-only { display: block !important; }
+            .bg-white { background-color: white !important; box-shadow: none !important; border: 1px solid #ccc !important; }
+            .dua-dark body, .dua-contrast body, .dua-dyslexic body { filter: none !important; background-color: white !important; }
+            .dua-dark .bg-white { background-color: white !important; color: black !important; border: none !important; }
+            #app { max-width: 100%; margin: 0; padding: 20px; }
+            .grid { display: block !important; }
+            .grid > div { margin-bottom: 20px; width: 100% !important; }
+        }
+        
+        .print-only { display: none; }
+        .btn-large { min-height: 50px; display: flex; align-items: center; justify-content: center; }
+        .error-message { color: #dc2626; font-weight: bold; }
+        .correct-message { color: #16a34a; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div id="app" class="container"></div>
+
+    <script>
+        // La primera línia que faig és assegurar-me que el DOM està carregat
+        document.addEventListener('DOMContentLoaded', () => {
+            // ============================================================
+            // 1. CONFIGURACIÓ DE LA PWA I GENERACIÓ DELS BLOBS
+            // ============================================================
+            const iconSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><path fill="#3b82f6" d="M256 0C114.6 0 0 114.6 0 256s114.6 256 256 256 256-114.6 256-256S397.4 0 256 0zm0 464C141.1 464 48 370.9 48 256S141.1 48 256 48s208 93.1 208 208-93.1 208-208 208z"/><text x="50%" y="55%" font-family="Arial" font-size="120" fill="white" text-anchor="middle" dominant-baseline="middle">Ω</text></svg>`;
+            const iconDataUri = `data:image/svg+xml;base64,${btoa(iconSvg)}`;
+            
+            const manifestJson = JSON.stringify({
+                name: "TecnoPWA - Llei d'Ohm",
+                short_name: "OhmPWA",
+                description: "Simulador de Llei d'Ohm i circuits mixtos per a Tecnologia i Digitalització",
+                start_url: location.href.split('?')[0],
+                display: "standalone",
+                background_color: "#f8fafc",
+                theme_color: "#3b82f6",
+                icons: [{ src: iconDataUri, sizes: "512x512", type: "image/svg+xml", purpose: "any maskable" }]
+            });
+            const manifestBlob = new Blob([manifestJson], { type: "application/json" });
+            const manifestURL = URL.createObjectURL(manifestBlob);
+            const linkManifest = document.createElement('link');
+            linkManifest.rel = 'manifest';
+            linkManifest.href = manifestURL;
+            document.head.appendChild(linkManifest);
+
+            const swCode = `
+            self.addEventListener('install', e => {
+                e.waitUntil(
+                    caches.open('pwa-ohm-v1').then(cache => {
+                        return cache.addAll([
+                            '/',
+                            'https://cdn.tailwindcss.com'
+                        ]);
+                    })
+                );
+                self.skipWaiting();
+            });
+            self.addEventListener('activate', e => {
+                e.waitUntil(clients.claim());
+            });
+            self.addEventListener('fetch', e => {
+                e.respondWith(
+                    caches.match(e.request).then(cached => {
+                        if (cached) return cached;
+                        return fetch(e.request).then(response => {
+                            let responseClone = response.clone();
+                            caches.open('pwa-ohm-v1').then(cache => {
+                                cache.put(e.request, responseClone);
+                            });
+                            return response;
+                        }).catch(() => caches.match('/'));
+                    })
+                );
+            });
+            `;
+            const swBlob = new Blob([swCode], { type: 'application/javascript' });
+            const swURL = URL.createObjectURL(swBlob);
+            
+            if ('serviceWorker' in navigator) {
+                navigator.serviceWorker.register(swURL).then(() => {
+                    console.log('✅ Service Worker registrat correctament amb Blob.');
+                }).catch(err => {
+                    console.warn('⚠️ No s\'ha pogut registrar el Service Worker:', err);
+                });
+            }
+
+            // ============================================================
+            // 2. LÒGICA PRINCIPAL DE L'APLICACIÓ (GENERADOR I AVALUACIÓ)
+            // ============================================================
+            const state = {
+                students: [],
+                currentStudentIdx: -1,
+                currentExercise: null,
+                userAnswer: '',
+                isCorrect: null,
+                showSolution: false,
+                rubricLevels: { CA1_1: 'No Assolit', CA1_2: 'No Assolit' },
+                darkMode: false,
+                highContrast: false,
+                dyslexicMode: false
+            };
+
+            const rubricInfo = {
+                CA1_1: { label: "CA1.1 - Aplicació de la Llei d'Ohm", desc: "Calcula magnituds elèctriques (I, V, R) en un circuit mixt." },
+                CA1_2: { label: "CA1.2 - Anàlisi de circuits", desc: "Analitza el funcionament d'un circuit amb associacions en sèrie i paral·lel." }
+            };
+
+            function generateMixedCircuitExercise() {
+                const R1 = Math.floor(Math.random() * 90) + 10;
+                const R2 = Math.floor(Math.random() * 90) + 10;
+                const R3 = Math.floor(Math.random() * 90) + 10;
+                const V = Math.floor(Math.random() * 12) + 12;
+
+                const Rp = (R1 * R2) / (R1 + R2);
+                const Rt = Rp + R3;
+                const It = V / Rt;
+                const V3 = It * R3;
+                const Vp = V - V3;
+                const I1 = Vp / R1;
+                const I2 = Vp / R2;
+
+                const round = (num) => Math.round(num * 100) / 100;
+                return { R1, R2, R3, V, Rp: round(Rp), Rt: round(Rt), It: round(It), Vp: round(Vp), V3: round(V3), I1: round(I1), I2: round(I2) };
+            }
+
+            function evaluateAnswer(userIt, userVp) {
+                if (!state.currentExercise) return;
+                const ex = state.currentExercise;
+                const tolerance = 0.10;
+                const isItCorrect = Math.abs(userIt - ex.It) <= (ex.It * tolerance);
+                const isVpCorrect = Math.abs(userVp - ex.Vp) <= (ex.Vp * tolerance);
+                let level1 = 'No Assolit';
+                let level2 = 'No Assolit';
+                if (isItCorrect && isVpCorrect) { level1 = 'Excel·lent'; level2 = 'Excel·lent'; }
+                else if (isItCorrect && !isVpCorrect) { level1 = 'Excel·lent'; level2 = 'Notable'; }
+                else if (!isItCorrect && isVpCorrect) { level1 = 'Notable'; level2 = 'Excel·lent'; }
+                else {
+                    if (Math.abs(userIt - ex.It) <= (ex.It * 0.30)) level1 = 'Satisfactori';
+                    if (Math.abs(userVp - ex.Vp) <= (ex.Vp * 0.30)) level2 = 'Satisfactori';
+                }
+                state.rubricLevels.CA1_1 = level1;
+                state.rubricLevels.CA1_2 = level2;
+            }
+
+            function handleCSVImport(file, callback) {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    let text = e.target.result;
+                    const lines = text.split(/\r?\n/).filter(line => line.trim() !== '');
+                    if (lines.length === 0) { alert("El fitxer CSV està buit."); return; }
+                    const firstLine = lines[0];
+                    const countComma = (firstLine.match(/,/g) || []).length;
+                    const countSemicolon = (firstLine.match(/;/g) || []).length;
+                    const delim = countComma >= countSemicolon ? ',' : ';';
+                    const names = [];
+                    for (let i = 1; i < lines.length; i++) {
+                        const cols = lines[i].split(delim);
+                        if (cols.length > 0 && cols[0].trim() !== '') names.push(cols[0].trim());
+                    }
+                    if (names.length === 0) { alert("No s'ha trobat cap nom a la primera columna."); return; }
+                    const students = names.map(name => ({ name: name, rubric: { CA1_1: 'No Assolit', CA1_2: 'No Assolit' } }));
+                    callback(students);
+                };
+                reader.readAsText(file, "UTF-8");
+            }
+
+            function exportResultsToCSV() {
+                let csvContent = "\uFEFF";
+                csvContent += "Nom de l'Alumne;CA1.1 (Llei d'Ohm);CA1.2 (Anàlisi)\n";
+                state.students.forEach(s => { csvContent += `${s.name};${s.rubric.CA1_1};${s.rubric.CA1_2}\n`; });
+                const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                const link = document.createElement("a");
+                const url = URL.createObjectURL(blob);
+                link.setAttribute("href", url);
+                link.setAttribute("download", "qualificacions_tecnopwa.csv");
+                link.style.visibility = 'hidden';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            }
+
+            function printRubric() { window.print(); }
+
+            // ============================================================
+            // 3. RENDERITZAT AMB VANILLA JS
+            // ============================================================
+            const app = document.getElementById('app');
+
+            function render() {
+                const exercise = state.currentExercise;
+                const isCorrect = state.isCorrect;
+                const selectedStudent = state.currentStudentIdx >= 0 ? state.students[state.currentStudentIdx] : null;
+                
+                const htmlClasses = [];
+                if (state.darkMode) htmlClasses.push('dua-dark');
+                if (state.highContrast) htmlClasses.push('dua-contrast');
+                if (state.dyslexicMode) htmlClasses.push('dua-dyslexic');
+                document.documentElement.className = htmlClasses.join(' ');
+
+                app.innerHTML = `
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <div class="no-print space-y-6">
+                        <div class="bg-white p-4 rounded-xl shadow-md">
+                            <h1 class="text-xl font-bold text-blue-600 mb-2">⚡ Llei d'Ohm (PWA)</h1>
+                            <div class="flex flex-wrap gap-2 items-center border-t pt-2">
+                                <label class="text-sm font-semibold flex items-center gap-1"><input type="checkbox" ${state.darkMode ? 'checked' : ''} onchange="toggleDUA('dark')"> 🌙 Fosc</label>
+                                <label class="text-sm font-semibold flex items-center gap-1"><input type="checkbox" ${state.highContrast ? 'checked' : ''} onchange="toggleDUA('contrast')"> 🔆 Alt Contrast</label>
+                                <label class="text-sm font-semibold flex items-center gap-1"><input type="checkbox" ${state.dyslexicMode ? 'checked' : ''} onchange="toggleDUA('dyslexic')"> 🔤 Llegibilitat facilitada</label>
+                            </div>
+                        </div>
+                        <div class="bg-white p-4 rounded-xl shadow-md">
+                            <div class="flex flex-wrap gap-2">
+                                <label class="cursor-pointer bg-blue-100 text-blue-700 px-4 py-2 rounded-lg shadow hover:bg-blue-200 flex-1 text-center">📂 Importar CSV (Llista)<input type="file" accept=".csv,.txt" class="hidden" onchange="handleImport(event)"></label>
+                                <button onclick="exportResultsToCSV()" class="bg-green-100 text-green-700 px-4 py-2 rounded-lg shadow hover:bg-green-200 flex-1">📥 Exportar CSV</button>
+                                <button onclick="printRubric()" class="bg-gray-100 text-gray-700 px-4 py-2 rounded-lg shadow hover:bg-gray-200 flex-1">🖨️ Exportar PDF</button>
+                            </div>
+                        </div>
+                        <div class="bg-white p-4 rounded-xl shadow-md">
+                            <label class="block font-semibold mb-1">Selecciona l'alumne:</label>
+                            <select class="w-full p-2 border rounded-lg" onchange="selectStudent(this.value)">
+                                <option value="-1">-- Cap alumne seleccionat --</option>
+                                ${state.students.map((s, i) => `<option value="${i}" ${state.currentStudentIdx === i ? 'selected' : ''}>${s.name}</option>`).join('')}
+                            </select>
+                        </div>
+                    </div>
+                    <div class="space-y-6">
+                        <div class="bg-white p-4 rounded-xl shadow-md print-only">
+                            <h2 class="text-lg font-bold mb-2 text-gray-800">📐 Pràctica: Circuits mixtos (Llei d'Ohm)</h2>
+                            ${selectedStudent ? `<p class="text-gray-600 mb-4 print-only"><strong>Alumne:</strong> ${selectedStudent.name}</p>` : ''}
+                            <button onclick="generateNewExercise()" class="w-full bg-indigo-600 text-white font-bold py-3 rounded-xl shadow hover:bg-indigo-700 no-print btn-large">🔄 Nou Exercici Aleatori</button>
+                        </div>
+                        ${exercise && selectedStudent ? `
+                        <div class="bg-white p-4 rounded-xl shadow-md print-only">
+                            <h3 class="font-semibold text-lg text-gray-800">Enunciat del circuit mixt</h3>
+                            <div class="my-2 p-3 bg-gray-50 rounded border print:bg-white print:border-gray-300">
+                                <p><strong>R1</strong> = ${exercise.R1} Ω (paral·lel), <strong>R2</strong> = ${exercise.R2} Ω (paral·lel)</p>
+                                <p><strong>R3</strong> = ${exercise.R3} Ω (sèrie)  |  <strong>Tensió Total (V)</strong> = ${exercise.V} V</p>
+                                <hr class="my-2"><p class="font-bold">Calcula:</p>
+                                <p>a) La <strong>Corrent Total (I<sub>total</sub>)</strong> que circula pel circuit.</p>
+                                <p>b) La <strong>Tensió (V<sub>paral·lel</sub>)</strong> que hi ha als extrems del grup de resistències en paral·lel.</p>
+                            </div>
+                            <div class="flex flex-col sm:flex-row gap-2 mb-2 no-print">
+                                <div class="flex-1"><label class="block text-sm">Resposta I_total (A):</label><input type="number" step="0.01" id="ansIt" class="w-full p-2 border rounded" placeholder="Ex: 0.75" value="${state.userAnswer.ansIt || ''}"></div>
+                                <div class="flex-1"><label class="block text-sm">Resposta V_paral·lel (V):</label><input type="number" step="0.01" id="ansVp" class="w-full p-2 border rounded" placeholder="Ex: 6.85" value="${state.userAnswer.ansVp || ''}"></div>
+                                <div class="flex items-end"><button onclick="checkAnswer()" class="bg-blue-600 text-white px-6 py-2 rounded-lg shadow hover:bg-blue-700 h-10">✅ Corregir</button></div>
+                            </div>
+                            ${isCorrect !== null ? `
+                                <div class="mt-2 p-3 rounded border ${isCorrect ? 'border-green-300 bg-green-50' : 'border-red-300 bg-red-50'} no-print">
+                                    <p class="${isCorrect ? 'correct-message' : 'error-message'} font-bold">${isCorrect ? '✅ Resposta Correcta!' : '❌ Resposta Incorrecta. Revisa el procediment.'}</p>
+                                    <button onclick="toggleSolution()" class="text-blue-600 hover:underline mt-1 text-sm">${state.showSolution ? '🔽 Amagar procediment' : '🔼 Mostrar procediment pas a pas'}</button>
+                                </div>
+                            ` : ''}
+                            <div class="${state.showSolution || isCorrect ? 'block' : 'hidden'} mt-2 no-print print:block">
+                                <div class="bg-gray-100 p-4 rounded border print:bg-white print:border-gray-300">
+                                    <h4 class="font-bold text-sm uppercase text-gray-600">📝 Procediment de resolució:</h4>
+                                    <ol class="list-decimal list-inside space-y-1 mt-2 text-sm print:text-black">
+                                        <li><b>Càlcul de la resistència equivalent en paral·lel (Rp):</b><br> Rp = (R1 · R2) / (R1 + R2) = (${exercise.R1} · ${exercise.R2}) / (${exercise.R1} + ${exercise.R2}) = <b>${exercise.Rp} Ω</b></li>
+                                        <li><b>Càlcul de la resistència total del circuit (Rt):</b><br> Rt = Rp + R3 = ${exercise.Rp} + ${exercise.R3} = <b>${exercise.Rt} Ω</b></li>
+                                        <li><b>Aplicació de la Llei d'Ohm per la Corrent Total (It):</b><br> It = V / Rt = ${exercise.V} / ${exercise.Rt} = <b>${exercise.It} A</b></li>
+                                        <li><b>Càlcul de la tensió al paral·lel (Vp):</b><br> Vp = It · Rp = ${exercise.It} · ${exercise.Rp} = <b>${exercise.Vp} V</b></li>
+                                        <li><b>Comprovació addicional:</b> La V3 = It · R3 = ${exercise.It} · ${exercise.R3} = ${exercise.V3} V, i la suma Vp + V3 = ${exercise.Vp} + ${exercise.V3} = ${exercise.V} V (Tensió total).</li>
+                                    </ol>
+                                </div>
+                            </div>
+                        </div>
+                        ` : (selectedStudent ? `<div class="bg-white p-6 text-center text-gray-500 rounded-xl shadow-md">Fes clic a <strong>"Nou Exercici"</strong> per començar la pràctica.</div>` : `<div class="bg-white p-6 text-center text-gray-500 rounded-xl shadow-md">Importa un CSV o selecciona un alumne per iniciar l'avaluació.</div>`)}
+                        <div class="bg-white p-4 rounded-xl shadow-md print-only">
+                            <h4 class="font-bold text-gray-800 border-b pb-1">📋 Rúbrica competencial (Decret 175/2022)</h4>
+                            ${exercise && selectedStudent ? `
+                                <table class="w-full mt-2 text-sm border-collapse border border-gray-200 print:border-black">
+                                    <thead class="bg-gray-100 print:bg-transparent"><tr><th class="border p-2 text-left print:border-black">Criteri d'Avaluació</th><th class="border p-2 text-center print:border-black">Nivell d'assoliment</th></tr></thead>
+                                    <tbody>${Object.keys(rubricInfo).map(key => `
+                                        <tr><td class="border p-2 print:border-black"><strong>${rubricInfo[key].label}</strong><br><span class="text-xs text-gray-600">${rubricInfo[key].desc}</span></td>
+                                        <td class="border p-2 text-center font-bold print:border-black"><span class="${state.rubricLevels[key] === 'Excel·lent' ? 'text-green-600' : state.rubricLevels[key] === 'Notable' ? 'text-blue-600' : state.rubricLevels[key] === 'Satisfactori' ? 'text-yellow-600' : 'text-red-600'}">${state.rubricLevels[key]}</span></td></tr>
+                                    `).join('')}</tbody>
+                                </table>
+                                <p class="text-xs text-gray-400 mt-2 print:text-gray-600">Nivells: Excel·lent (100-90%) · Notable (89-70%) · Satisfactori (69-50%) · No Assolit (<50%)</p>
+                            ` : '<p class="text-gray-500 text-sm mt-2">La rúbrica s\'omplirà un cop l\'alumne resolgui l\'exercici.</p>'}
+                        </div>
+                    </div>
+                </div>
+                `;
+            }
+
+            window.toggleDUA = (type) => {
+                if (type === 'dark') state.darkMode = !state.darkMode;
+                if (type === 'contrast') state.highContrast = !state.highContrast;
+                if (type === 'dyslexic') state.dyslexicMode = !state.dyslexicMode;
+                render();
+            };
+
+            window.selectStudent = (idx) => {
+                state.currentStudentIdx = parseInt(idx);
+                state.isCorrect = null; state.showSolution = false;
+                if (state.currentStudentIdx >= 0 && state.students[state.currentStudentIdx]) {
+                    state.rubricLevels = { ...state.students[state.currentStudentIdx].rubric };
+                } else { state.rubricLevels = { CA1_1: 'No Assolit', CA1_2: 'No Assolit' }; }
+                render();
+            };
+
+            window.generateNewExercise = () => {
+                if (state.currentStudentIdx < 0) { alert("Si us plau, selecciona un alumne o importa una llista abans de generar exercicis."); return; }
+                state.currentExercise = generateMixedCircuitExercise();
+                state.isCorrect = null; state.showSolution = false;
+                state.userAnswer = { ansIt: '', ansVp: '' };
+                state.rubricLevels = { CA1_1: 'No Assolit', CA1_2: 'No Assolit' };
+                render();
+            };
+
+            window.checkAnswer = () => {
+                if (!state.currentExercise) return;
+                const ansIt = parseFloat(document.getElementById('ansIt').value);
+                const ansVp = parseFloat(document.getElementById('ansVp').value);
+                if (isNaN(ansIt) || isNaN(ansVp)) { alert("Introdueix valors numèrics vàlids per a la intensitat i la tensió."); return; }
+                state.userAnswer = { ansIt: ansIt, ansVp: ansVp };
+                evaluateAnswer(ansIt, ansVp);
+                state.isCorrect = (state.rubricLevels.CA1_1 === 'Excel·lent' && state.rubricLevels.CA1_2 === 'Excel·lent');
+                if (state.currentStudentIdx >= 0 && state.students[state.currentStudentIdx]) {
+                    const prev = state.students[state.currentStudentIdx].rubric;
+                    const levels = ['No Assolit', 'Satisfactori', 'Notable', 'Excel·lent'];
+                    const getMax = (a, b) => levels.indexOf(a) > levels.indexOf(b) ? a : b;
+                    state.students[state.currentStudentIdx].rubric.CA1_1 = getMax(prev.CA1_1, state.rubricLevels.CA1_1);
+                    state.students[state.currentStudentIdx].rubric.CA1_2 = getMax(prev.CA1_2, state.rubricLevels.CA1_2);
+                    state.rubricLevels = { ...state.students[state.currentStudentIdx].rubric };
+                }
+                render();
+            };
+
+            window.toggleSolution = () => { state.showSolution = !state.showSolution; render(); };
+
+            window.handleImport = (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                handleCSVImport(file, (students) => {
+                    state.students = students; state.currentStudentIdx = -1; state.currentExercise = null; state.isCorrect = null; state.showSolution = false; render();
+                });
+                e.target.value = '';
+            };
+
+            // ============================================================
+            // 4. INICI DE L'APLICACIÓ
+            // ============================================================
+            render();
+            if (state.students.length === 0) {
+                state.students = [
+                    { name: "Alumne de Prova (A)", rubric: { CA1_1: 'No Assolit', CA1_2: 'No Assolit' } },
+                    { name: "Alumne de Prova (B)", rubric: { CA1_1: 'No Assolit', CA1_2: 'No Assolit' } }
+                ];
+                render();
+            }
+            console.log("🚀 TecnoPWA de Llei d'Ohm carregada amb èxit.");
+        }); // FI DE DOMContentLoaded
+    </script>
+</body>
+</html>
